@@ -70,29 +70,29 @@ jobs:
               exit 0
             fi
             
-            # For PRs from forks, use the fork repository; otherwise use the main repo
+            # Fetch this repository, not the upstream hardcoded in the job env.
+            # PR checks must build the synthetic merge commit (including fork changes).
+            export GIT_REPO="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
             if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-              export GIT_REPO="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY##*/}.git"
-              export BRANCH="${GITHUB_HEAD_REF}"
-              echo "PR detected - using fork repository: $GIT_REPO"
-              echo "Fetching code from branch $BRANCH"
-            else
-              if [[ $GITHUB_REF_TYPE == "tag" ]]; then
-                export TAG="${GITHUB_REF#refs/tags/}"
-                echo "Fetching code from tag $TAG"
-              else
-                export BRANCH="${GITHUB_REF#refs/heads/}"
-                echo "Fetching code from branch $BRANCH"
-              fi
-            fi
-
-            if git clone --depth 1 --branch "${TAG:-$BRANCH}" "$GIT_REPO"; then
-                echo "Code fetched successfully."
-            else
-                echo "Failed to fetch code. Check the repository and settings."
+              git init -q "$PROJECT_DIR"
+              git -C "$PROJECT_DIR" remote add origin "$GIT_REPO"
+              git -C "$PROJECT_DIR" fetch --depth 1 origin "$GITHUB_REF"
+              git -C "$PROJECT_DIR" checkout --detach FETCH_HEAD
+              # A PR may be updated while the workflow is starting.
+              # Fail rather than silently test a different merge commit.
+              if [[ "$(git -C "$PROJECT_DIR" rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+                echo "ERROR: PR merge ref changed since workflow dispatch" >&2
                 exit 1
+              fi
+            else
+              if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+                ref="${GITHUB_REF#refs/tags/}"
+              else
+                ref="${GITHUB_REF#refs/heads/}"
+              fi
+              git clone --depth 1 --branch "$ref" "$GIT_REPO"
             fi
-
+            echo "Code fetched successfully."
             ls /home/docker
         - name: "Set version"
           if: matrix.cfg.skip == false

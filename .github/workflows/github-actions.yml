@@ -63,6 +63,8 @@ jobs:
             chown -R docker:docker /github/home /home/docker /project
         - name: "Fetch code"
           if: matrix.cfg.skip == false
+          env:
+            PR_HEAD_REPO_FULL_NAME: ${{ github.event.pull_request.head.repo.full_name }}
           run: |
             cd /project
             if [[ $SKIP_BUILD == "true" ]]; then
@@ -72,7 +74,11 @@ jobs:
             
             # For PRs from forks, use the fork repository; otherwise use the main repo
             if [[ "$GITHUB_EVENT_NAME" == "pull_request" ]]; then
-              export GIT_REPO="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY_OWNER}/${GITHUB_REPOSITORY##*/}.git"
+              if [[ -z "${PR_HEAD_REPO_FULL_NAME}" ]]; then
+                echo "Missing PR head repository; cannot check out pull request safely."
+                exit 1
+              fi
+              export GIT_REPO="${GITHUB_SERVER_URL}/${PR_HEAD_REPO_FULL_NAME}.git"
               export BRANCH="${GITHUB_HEAD_REF}"
               echo "PR detected - using fork repository: $GIT_REPO"
               echo "Fetching code from branch $BRANCH"
